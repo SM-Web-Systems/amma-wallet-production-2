@@ -1,0 +1,37 @@
+sequenceDiagram
+    autonumber
+    actor Admin as Admin User
+    participant Browser as Browser
+    participant LoginPage as AdminLogin Component
+    participant API as POST /internal/auth/login
+    participant Session as sessionStorage
+    participant Router as React Router
+
+    Admin->>Browser: Navigate to /admin/login
+    Browser->>LoginPage: Render login form
+
+    Admin->>LoginPage: Enter email + password
+    Admin->>LoginPage: Click "Sign in"
+
+    LoginPage->>LoginPage: Validate inputs (non-empty)
+    alt Missing email or password
+        LoginPage-->>Admin: Show "Email and password are required."
+    end
+
+    LoginPage->>LoginPage: Set loading = true
+    LoginPage->>API: POST /api/v1/internal/auth/login<br/>{ email, password }
+
+    alt Login failed (HTTP !ok)
+        API-->>LoginPage: { error: "..." }
+        LoginPage-->>Admin: Show error message
+    else Network error
+        LoginPage-->>Admin: Show "Network error - please try again."
+    else Login successful (HTTP 200)
+        API-->>LoginPage: { token: "jwt...", admin: { id, email, name, role } }
+        LoginPage->>Session: setItem("aw_admin_token", token)
+        LoginPage->>Session: setItem("aw_admin_info", JSON.stringify(admin))
+        LoginPage->>Router: navigate("/admin")
+        Router->>Browser: Redirect to /admin
+    end
+
+    Note over Session: Token lives in sessionStorage only.<br/>Cleared automatically when tab closes.

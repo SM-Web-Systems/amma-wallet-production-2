@@ -1,0 +1,48 @@
+sequenceDiagram
+    autonumber
+    actor Admin as Admin User
+    participant Form as Credit Form<br/>(AdminTenantDetail)
+    participant Modal as Confirmation Dialog
+    participant API as POST /internal/tenants/:id/credit
+    participant Page as Page State
+
+    Admin->>Form: Select type (manual_topup / bundle_purchase)
+    Admin->>Form: Enter amount (XLM)
+    Admin->>Form: Optionally add notes
+    Admin->>Form: Click "Post credit"
+
+    Form->>Form: Validate: amount > 0, is number
+    alt Invalid amount
+        Form-->>Admin: Show "Amount must be a positive number."
+    end
+
+    Form->>Modal: Open confirmation dialog
+
+    Note over Modal: Shows amount, type, tenant name,<br/>notes, and irreversibility warning
+
+    alt Admin cancels
+        Admin->>Modal: Click "Cancel"
+        Modal->>Form: Close dialog, no action
+    else Admin confirms
+        Admin->>Modal: Click "Post credit"
+        Modal->>Form: Close dialog, trigger submit
+
+        Form->>Form: Set creditSubmitting = true
+        Form->>API: POST /api/v1/internal/tenants/:id/credit<br/>{ type, amount_xlm, notes }
+
+        alt 401 Unauthorized
+            API-->>Form: 401
+            Form->>Page: logout() - clear session, redirect
+        else Error response
+            API-->>Form: { error: "..." }
+            Form-->>Admin: Show error message
+        else Success
+            API-->>Form: { amountCredited, newBalance }
+            Form-->>Admin: Show success message<br/>(auto-clears after 8 seconds)
+            Form->>Form: Clear amount + notes fields
+            Form->>Page: Trigger load() to refresh billing data
+            Page->>API: GET /internal/tenants/:id/billing
+            API-->>Page: Updated billing + events
+            Page-->>Admin: Render refreshed data
+        end
+    end
