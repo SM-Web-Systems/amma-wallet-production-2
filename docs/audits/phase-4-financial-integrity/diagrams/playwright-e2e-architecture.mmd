@@ -1,0 +1,66 @@
+graph TD
+    subgraph "Test Runner"
+        PW["Playwright<br/>@playwright/test"]
+        CFG["playwright.config.ts<br/>baseURL, timeouts, retries"]
+    end
+
+    subgraph "Browser Targets"
+        CH["Chromium<br/>(default)"]
+        DV["Desktop viewport<br/>1280 x 720"]
+        MV["Mobile viewport<br/>375 x 667"]
+    end
+
+    subgraph "Frontend"
+        VITE["Vite dev server<br/>localhost:5173"]
+        REACT["React SPA<br/>Admin UI routes"]
+    end
+
+    subgraph "Backend"
+        API["Fastify API server<br/>localhost:3001"]
+        MW["Auth middleware<br/>verifyInternalAdmin"]
+        ROUTES["Admin routes<br/>/api/v1/internal/*"]
+    end
+
+    subgraph "Database"
+        PGTEST["PostgreSQL 16<br/>amma-db-integration-test<br/>port 15432"]
+    end
+
+    subgraph "E2E Test Categories"
+        direction TB
+        E1["Login & Logout<br/>(P4-053)"]
+        E2["Auth Redirects<br/>(P4-054)"]
+        E3["Tenant Dashboard<br/>(P4-055)"]
+        E4["Billing Details<br/>(P4-056)"]
+        E5["Credit Posting<br/>(P4-057)"]
+        E6["Suspend / Unsuspend<br/>(P4-058)"]
+        E7["Role Restrictions<br/>(P4-059)"]
+        E8["Admin Management<br/>(P4-060)"]
+        E9["Pagination<br/>(P4-061)"]
+        E10["Session Expiry<br/>(P4-062)"]
+        E11["Network Errors<br/>(P4-063)"]
+        E12["Responsive Layout<br/>(desktop + mobile)"]
+    end
+
+    PW --> CFG
+    PW --> CH
+    CH --> DV
+    CH --> MV
+
+    DV --> VITE
+    MV --> VITE
+    VITE --> REACT
+    REACT -->|"fetch /api/v1/internal/*"| API
+    API --> MW
+    MW --> ROUTES
+    ROUTES --> PGTEST
+
+    E1 & E2 & E3 & E4 & E5 & E6 --> PW
+    E7 & E8 & E9 & E10 & E11 & E12 --> PW
+
+    style PW fill:#7c3aed,color:#fff
+    style CH fill:#2563eb,color:#fff
+    style VITE fill:#10b981,color:#fff
+    style API fill:#f59e0b,color:#fff
+    style PGTEST fill:#bae6fd,stroke:#0284c7,color:#0c4a6e
+    style DV fill:#ddd6fe,stroke:#7c3aed
+    style MV fill:#ddd6fe,stroke:#7c3aed

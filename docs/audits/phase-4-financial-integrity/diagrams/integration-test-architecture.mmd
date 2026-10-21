@@ -1,0 +1,56 @@
+graph TD
+    subgraph "Integration Test Path (real database)"
+        direction TB
+        V["vitest<br/>Test Runner"]
+        DBH["db-harness.ts<br/>Connection management"]
+        PG["postgres.js<br/>SQL driver (no ORM)"]
+        DC["amma-db-integration-test<br/>Docker container<br/>port 15432"]
+        PG16["PostgreSQL 16<br/>Isolated test instance"]
+
+        subgraph "Harness Utilities"
+            direction TB
+            SEED["Seed Helpers<br/>seedTenant()<br/>seedAdmin()<br/>seedBillingPolicy()<br/>seedBillingEvent()"]
+            QH["Query Helpers<br/>getTenantBalance()<br/>getBillingEvents()<br/>getAdminByEmail()"]
+            TA["truncateAll()<br/>Clears all tables<br/>between test runs"]
+        end
+
+        subgraph "Integration Test Files"
+            direction TB
+            IT1["billing-credit.integration.test.ts<br/>Real INSERT + balance UPDATE"]
+            IT2["idempotency.integration.test.ts<br/>UNIQUE constraint enforcement"]
+            IT3["concurrent-credit.integration.test.ts<br/>Parallel transaction races"]
+            IT4["ledger-reconciliation.integration.test.ts<br/>SUM(amount) = balance delta"]
+            IT5["admin-auth.integration.test.ts<br/>JWT + role checks against real DB"]
+            IT6["suspension.integration.test.ts<br/>State transitions + billing gates"]
+            IT7["pagination.integration.test.ts<br/>Cursor-based event queries"]
+        end
+    end
+
+    subgraph "Unit Test Path (mocked — existing)"
+        direction TB
+        VU["vitest<br/>Test Runner"]
+        MOCK["vi.mock('postgres')<br/>Mocked DB layer"]
+        UT["68 admin tests + 566 backend tests<br/>Fast, no real DB"]
+    end
+
+    V --> DBH
+    DBH --> PG
+    PG --> DC
+    DC --> PG16
+
+    DBH --> SEED
+    DBH --> QH
+    DBH --> TA
+
+    IT1 & IT2 & IT3 & IT4 & IT5 & IT6 & IT7 --> DBH
+
+    VU --> MOCK
+    MOCK --> UT
+
+    Note1["Integration tests use real PostgreSQL<br/>to verify constraint enforcement,<br/>transaction isolation, and query correctness.<br/>Unit tests remain for fast feedback."]
+
+    style DC fill:#bae6fd,stroke:#0284c7,color:#0c4a6e
+    style PG16 fill:#bae6fd,stroke:#0284c7,color:#0c4a6e
+    style DBH fill:#e8d5f5,stroke:#7c3aed,color:#3b0764
+    style MOCK fill:#fef3c7,stroke:#d97706,color:#92400e
+    style Note1 fill:#f0f0f0,stroke:#999,color:#333

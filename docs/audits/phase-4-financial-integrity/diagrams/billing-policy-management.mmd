@@ -1,0 +1,63 @@
+sequenceDiagram
+    autonumber
+    actor Admin as Admin User
+    participant Page as AdminTenantDetail
+    participant Form as Edit Policy Form
+    participant Modal as Confirmation Dialog
+    participant API as PATCH /internal/tenants/:id/billing-policy
+    participant DB as Database
+    participant State as Page State
+
+    Admin->>Page: Navigate to tenant detail page
+    Page->>State: load() fetches tenant + billing data
+    State->>API: GET /internal/tenants/:id/billing
+    API-->>State: { tenant, billingPolicy, events }
+
+    Admin->>Page: Click "Edit Policy" button
+    Page->>Form: Open form, pre-populated with current values
+
+    Note over Form: Fields:<br/>- activation_fee_xlm<br/>- monthly_maintenance_xlm<br/>- debt_limit_xlm<br/>- maintenance_grace_days<br/>- bundle configurations
+
+    Admin->>Form: Edit policy fields
+    Admin->>Form: Click "Save changes"
+
+    Form->>Form: Validate: all amounts >= 0, numeric
+
+    alt Validation fails
+        Form-->>Admin: Show field-level error messages
+    else Validation passes
+        Form->>Modal: Open confirmation dialog
+
+        Note over Modal: WARNING: Changes affect ALL users<br/>under this tenant. New activation fee<br/>applies to future activations. New<br/>maintenance fee applies at next<br/>billing cycle.
+
+        alt Admin cancels
+            Admin->>Modal: Click "Cancel"
+            Modal->>Form: Close dialog, return to form
+        else Admin confirms
+            Admin->>Modal: Click "Confirm policy change"
+            Modal->>Form: Close dialog, trigger submit
+
+            Form->>Form: Set submitting = true
+            Form->>API: PATCH /api/v1/internal/tenants/:id/billing-policy<br/>{ activation_fee_xlm, monthly_maintenance_xlm,<br/>  debt_limit_xlm, maintenance_grace_days }
+
+            alt 401 Unauthorized
+                API-->>Form: 401
+                Form->>State: logout() — clear session, redirect
+            else 403 Forbidden
+                API-->>Form: 403 { error: "Insufficient role" }
+                Form-->>Admin: Show "You do not have permission to edit billing policies."
+            else Validation Error
+                API-->>Form: 400 { error: "..." }
+                Form-->>Admin: Show server validation error
+            else Success
+                API->>DB: UPDATE billing_policies<br/>SET ... WHERE tenant_id = :id
+                API->>DB: INSERT audit_logs<br/>(action: policy_update, detail: diff)
+                API-->>Form: 200 { updatedPolicy }
+                Form-->>Admin: Show success message<br/>"Billing policy updated successfully"
+                Form->>State: Trigger load() to refresh all data
+                State->>API: GET /internal/tenants/:id/billing
+                API-->>State: Updated billing data
+                State-->>Admin: Render refreshed policy values
+            end
+        end
+    end

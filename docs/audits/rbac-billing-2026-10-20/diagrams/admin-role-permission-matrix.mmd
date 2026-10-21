@@ -1,0 +1,49 @@
+flowchart LR
+    subgraph "Roles"
+        SA["super_admin"]
+        PA["platform_admin"]
+        AM["account_manager"]
+        SUP["support_agent"]
+    end
+
+    subgraph "Read Operations (Any Admin)"
+        R1["GET /internal/me"]
+        R2["GET /internal/tenants"]
+        R3["GET /internal/tenants/:id/billing"]
+        R4["GET /internal/tenants/:id/events"]
+        R5["GET /internal/admins"]
+    end
+
+    subgraph "Privileged Write Operations"
+        W1["POST /internal/tenants/:id/credit"]
+        W2["PATCH /internal/tenants/:id/suspend"]
+        W3["PATCH /internal/tenants/:id/unsuspend"]
+        W4["PATCH /internal/tenants/:id/billing-policy"]
+        W5["POST /internal/admins"]
+        W6["PATCH /internal/admins/:id/deactivate"]
+        W7["PATCH /internal/admins/:id/reactivate"]
+    end
+
+    subgraph "Super Admin Only"
+        S1["POST /internal/admins/:id/reset-password"]
+    end
+
+    SA --> R1 & R2 & R3 & R4 & R5
+    SA --> W1 & W2 & W3 & W4 & W5 & W6 & W7
+    SA --> S1
+
+    PA --> R1 & R2 & R3 & R4 & R5
+    PA --> W1 & W2 & W3 & W4 & W5 & W6 & W7
+    PA -.->|"BLOCKED: cannot target super_admin"| W5 & W6 & W7
+
+    AM --> R1 & R2 & R3 & R4 & R5
+    AM -.->|"403 Forbidden"| W1
+
+    SUP --> R1 & R2 & R3 & R4 & R5
+    SUP -.->|"403 Forbidden"| W1
+
+    style SA fill:#7c3aed,color:#fff
+    style PA fill:#2563eb,color:#fff
+    style AM fill:#059669,color:#fff
+    style SUP fill:#d97706,color:#fff
+    style S1 fill:#dc2626,color:#fff
