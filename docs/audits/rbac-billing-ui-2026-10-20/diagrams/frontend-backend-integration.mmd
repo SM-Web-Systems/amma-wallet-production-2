@@ -1,0 +1,60 @@
+graph LR
+    subgraph "Frontend (React)"
+        subgraph "Shared"
+            AA["lib/admin-api.ts<br/>adminFetch() + getAdminInfo()"]
+        end
+
+        subgraph "Pages"
+            P1["AdminLogin.tsx<br/>Raw fetch (no auth)"]
+            P2["AdminConsole.tsx"]
+            P3["AdminTenantDetail.tsx"]
+            P4["AdminAdmins.tsx"]
+        end
+
+        subgraph "Auth"
+            SS["sessionStorage<br/>aw_admin_token<br/>aw_admin_info"]
+            AR["App.tsx AdminRoute<br/>Centralized guard"]
+        end
+    end
+
+    subgraph "Backend (Fastify)"
+        subgraph "Middleware"
+            MW["verifyInternalAdmin<br/>JWT verification"]
+            RL["Rate limiter<br/>5/15min login<br/>60/min global"]
+        end
+
+        subgraph "Routes (admin.ts)"
+            R1["POST /auth/login"]
+            R2["GET /tenants"]
+            R3["GET /tenants/:id/billing"]
+            R4["POST /tenants/:id/credit"]
+            R5["PATCH /tenants/:id/suspend"]
+            R6["PATCH /tenants/:id/unsuspend"]
+            R7["GET /tenants/:id/events"]
+            R8["CRUD /admins"]
+        end
+
+        subgraph "Services"
+            BS["billing.service.ts<br/>writeBillingCredit()"]
+        end
+
+        subgraph "Database"
+            DB[(PostgreSQL<br/>tenants<br/>billing_events<br/>admin_accounts<br/>audit_logs)]
+        end
+    end
+
+    P1 -->|"POST {email,pwd}"| R1
+    P2 -->|"Bearer JWT"| AA
+    P3 -->|"Bearer JWT"| AA
+    P4 -->|"Bearer JWT"| AA
+    AA -->|"Authorization: Bearer"| MW
+    MW --> R2 & R3 & R4 & R5 & R6 & R7 & R8
+    R1 -->|"JWT + admin info"| SS
+    SS --> AR
+    AR -->|"Protects /admin/*"| P2 & P3 & P4
+    R4 --> BS --> DB
+    R1 --> RL
+
+    style AA fill:#e8d5f5
+    style MW fill:#fde68a
+    style BS fill:#bae6fd
