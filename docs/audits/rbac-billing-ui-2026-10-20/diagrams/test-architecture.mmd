@@ -1,0 +1,58 @@
+graph TD
+    subgraph "Test Infrastructure"
+        V["vitest 4.x<br/>Test Runner"]
+        J["jsdom<br/>Browser Environment"]
+        TL["@testing-library/react<br/>Component Queries"]
+        UE["@testing-library/user-event<br/>User Interactions"]
+        MSW["MSW 2.x<br/>API Mock Server"]
+    end
+
+    subgraph "Test Setup (setup.ts)"
+        S1["beforeAll: server.listen()"]
+        S2["afterEach: cleanup + resetHandlers + sessionStorage.clear"]
+        S3["afterAll: server.close()"]
+    end
+
+    subgraph "MSW Handlers (msw-server.ts)"
+        H1["POST /auth/login"]
+        H2["GET /tenants"]
+        H3["GET /tenants/:id/billing"]
+        H4["POST /tenants/:id/credit"]
+        H5["PATCH /tenants/:id/suspend"]
+        H6["PATCH /tenants/:id/unsuspend"]
+        H7["GET /tenants/:id/events"]
+        H8["GET /admins"]
+        H9["POST /admins"]
+        H10["PATCH /admins/:id/deactivate"]
+        H11["PATCH /admins/:id/reactivate"]
+        H12["POST /admins/:id/reset-password"]
+    end
+
+    subgraph "Test Files (68 admin tests)"
+        T1["admin-api.test.ts<br/>6 tests"]
+        T2["AdminLogin.test.tsx<br/>9 tests"]
+        T3["AdminConsole.test.tsx<br/>12 tests"]
+        T4["AdminTenantDetail.test.tsx<br/>22 tests"]
+        T5["AdminAdmins.test.tsx<br/>21 tests"]
+    end
+
+    subgraph "Components Under Test"
+        C1["lib/admin-api.ts"]
+        C2["AdminLogin.tsx"]
+        C3["AdminConsole.tsx"]
+        C4["AdminTenantDetail.tsx"]
+        C5["AdminAdmins.tsx"]
+    end
+
+    V --> J
+    V --> S1
+    TL --> J
+    UE --> TL
+    MSW --> H1
+    T1 --> C1
+    T2 --> C2
+    T3 --> C3
+    T4 --> C4
+    T5 --> C5
+    T1 & T2 & T3 & T4 & T5 --> MSW
+    T1 & T2 & T3 & T4 & T5 --> TL

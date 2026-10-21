@@ -1,0 +1,42 @@
+sequenceDiagram
+    participant UI as Admin UI
+    participant API as POST /credit
+    participant TX as Transaction
+    participant BE as billing_events
+    participant T as tenants
+
+    rect rgb(200,255,200)
+    Note over UI,T: Normal Credit Request
+    UI->>UI: Generate idempotency_key (UUID v4)
+    UI->>API: POST {type, amount_xlm, idempotency_key: K}
+    API->>API: Auth + role check
+    API->>TX: BEGIN
+    TX->>BE: SELECT WHERE tenant_id=X AND idempotency_key=K
+    BE-->>TX: [] (empty)
+    TX->>BE: INSERT (tenant_id, type, amount, key=K)
+    TX->>T: UPDATE balance += amount
+    TX-->>TX: COMMIT
+    API-->>UI: 200 {newBalance, amountCredited}
+    end
+
+    rect rgb(255,255,200)
+    Note over UI,T: Duplicate Request (safe retry)
+    UI->>API: POST {same idempotency_key: K}
+    API->>TX: BEGIN
+    TX->>BE: SELECT WHERE idempotency_key=K
+    BE-->>TX: [{id:42, amount:"100"}]
+    TX->>T: SELECT balance (read-only)
+    TX-->>TX: COMMIT (no writes)
+    API-->>UI: 200 {newBalance, duplicate: true}
+    end
+
+    rect rgb(255,200,200)
+    Note over UI,T: Concurrent Race (DB enforced)
+    UI->>API: Request A (key=K)
+    UI->>API: Request B (key=K)
+    API->>TX: A: INSERT → SUCCESS
+    API->>TX: B: INSERT → UNIQUE VIOLATION
+    API->>TX: B: ROLLBACK → re-read original
+    API-->>UI: A: 200 {amountCredited}
+    API-->>UI: B: 200 {duplicate: true}
+    end

@@ -1,0 +1,66 @@
+flowchart TD
+    A[Incoming Request] --> B{Route type?}
+
+    B -->|/api/v1/internal/*| C{Has Authorization header?}
+    B -->|/api/v1/tenant/*| D{Has x-api-key header?}
+    B -->|/api/v1/wallets etc| E{Has x-api-key?}
+    B -->|/api/v1/auth/*| F[User Auth - JWT_SECRET]
+
+    %% Admin path
+    C -->|No| C1[401 Unauthorized]
+    C -->|Yes| C2{JWT verify with ADMIN_JWT_SECRET}
+    C2 -->|Invalid/Expired| C1
+    C2 -->|Valid| C3{payload.type === admin?}
+    C3 -->|No| C1
+    C3 -->|Yes| C4{Parse sub → admin ID}
+    C4 -->|Invalid| C1
+    C4 -->|Valid| C5{DB: internal_admins.is_active?}
+    C5 -->|No/Not found| C1
+    C5 -->|Yes| C6[request.admin = AdminContext]
+
+    C6 --> G{Route requires PRIVILEGED_ROLES?}
+    G -->|No - read endpoint| G1[200 OK - Any admin role]
+    G -->|Yes| G2{role in super_admin, platform_admin?}
+    G2 -->|No| G3[403 Forbidden]
+    G2 -->|Yes| G4{Route-specific guards}
+    G4 -->|reset-password: role != super_admin| G3
+    G4 -->|create: platform_admin creating super_admin| G3
+    G4 -->|deactivate: platform_admin targeting super_admin| G3
+    G4 -->|deactivate: targeting self| G5[400 Bad Request]
+    G4 -->|Passed| G6[200 OK - Execute operation]
+
+    %% Tenant API key path
+    D -->|No| D1[401 Invalid or missing API key]
+    D -->|Yes| D2{SHA-256 hash → tenant_api_keys lookup}
+    D2 -->|Found, active, not expired| D3{Per-key rate limit check}
+    D2 -->|Not found| D4{Env-var API_KEYS check}
+    D4 -->|Match| D5["source=env, tenantId=null, scopes=[]"]
+    D4 -->|No match| D1
+    D3 -->|Exceeded| D6[429 Rate Limit]
+    D3 -->|OK| D7["source=db, tenantId=N, scopes=[...]"]
+
+    D7 --> D8{requireScope check}
+    D5 --> D8
+    D8 -->|source=env: exempt| D9[200 OK]
+    D8 -->|source=db, scope missing| D10[403 Missing scope]
+    D8 -->|source=db, scope present| D9
+
+    %% Wallet activation with billing
+    E -->|Resolved| E1{Billing pre-flight check}
+    E1 -->|No tenant context| E2[No billing]
+    E1 -->|Tenant suspended| E3[402 Suspended]
+    E1 -->|Tenant inactive| E4[403 Inactive]
+    E1 -->|Debt limit reached| E3
+    E1 -->|Insufficient balance| E3
+    E1 -->|OK| E5[db.transaction with FOR UPDATE lock]
+
+    style C1 fill:#f66,color:#fff
+    style D1 fill:#f66,color:#fff
+    style G3 fill:#f96,color:#fff
+    style D6 fill:#f96,color:#fff
+    style D10 fill:#f96,color:#fff
+    style G1 fill:#6f6
+    style G6 fill:#6f6
+    style D9 fill:#6f6
+    style E3 fill:#f96,color:#fff
+    style E4 fill:#f66,color:#fff

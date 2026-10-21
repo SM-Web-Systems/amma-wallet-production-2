@@ -1,0 +1,24 @@
+flowchart TD
+    A[User navigates to /admin/*] --> B{AdminRoute:<br/>sessionStorage has<br/>aw_admin_token?}
+
+    B -- No --> C[Redirect to /admin/login]
+    B -- Yes --> D[Render protected page<br/>AdminConsole / AdminTenantDetail / AdminAdmins]
+
+    D --> E[Page useEffect checks<br/>sessionStorage token again]
+    E -- No token --> C
+
+    E -- Token present --> F[Page calls adminFetch<br/>GET /api/v1/internal/...]
+
+    F --> G{Response status?}
+
+    G -- 401 Unauthorized --> H[logout: clear sessionStorage<br/>aw_admin_token + aw_admin_info]
+    H --> C
+
+    G -- Other error --> I[Show error message<br/>to admin user]
+
+    G -- 200 OK --> J[Parse JSON response]
+    J --> K[Render data<br/>tenants / billing / admins]
+
+    style C fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style K fill:#dcfce7,stroke:#16a34a,color:#166534
+    style H fill:#fef3c7,stroke:#d97706,color:#92400e

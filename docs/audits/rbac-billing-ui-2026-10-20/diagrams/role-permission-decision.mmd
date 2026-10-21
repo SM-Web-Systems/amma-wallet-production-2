@@ -1,0 +1,64 @@
+flowchart TD
+    Start[Admin action requested] --> WhatRole{What role is<br/>the caller?}
+
+    %% ── super_admin branch ──
+    WhatRole -- super_admin --> SA_Action{What action?}
+
+    SA_Action -- Invite --> SA_Invite[Can invite any role:<br/>super_admin, platform_admin,<br/>account_manager, support_agent]
+    SA_Invite --> ALLOWED_1[ALLOWED]
+
+    SA_Action -- Deactivate --> SA_Deact{Target is self?}
+    SA_Deact -- Yes --> DENIED_SELF[DENIED<br/>Cannot deactivate self]
+    SA_Deact -- No --> SA_Deact_OK[Can deactivate any admin<br/>regardless of target role]
+    SA_Deact_OK --> ALLOWED_2[ALLOWED]
+
+    SA_Action -- Reactivate --> SA_React{Target is active?}
+    SA_React -- Yes --> DENIED_ACTIVE[DENIED<br/>Already active]
+    SA_React -- No --> SA_React_OK[Can reactivate any admin<br/>regardless of target role]
+    SA_React_OK --> ALLOWED_3[ALLOWED]
+
+    SA_Action -- Reset password --> SA_Reset{Target is self?}
+    SA_Reset -- Yes --> DENIED_SELF_PWD[DENIED<br/>Cannot reset own password]
+    SA_Reset -- No --> SA_Reset_OK[Can reset any admin password]
+    SA_Reset_OK --> ALLOWED_4[ALLOWED]
+
+    %% ── platform_admin branch ──
+    WhatRole -- platform_admin --> PA_Action{What action?}
+
+    PA_Action -- Invite --> PA_Invite[Can invite: platform_admin,<br/>account_manager, support_agent<br/>Cannot invite super_admin]
+    PA_Invite --> ALLOWED_5[ALLOWED]
+
+    PA_Action -- Deactivate --> PA_Deact_Target{Target role?}
+    PA_Deact_Target -- super_admin --> DENIED_RANK_D[DENIED<br/>Cannot deactivate<br/>higher-ranked admin]
+    PA_Deact_Target -- "platform_admin /<br/>account_manager /<br/>support_agent" --> PA_Deact_Self{Target is self?}
+    PA_Deact_Self -- Yes --> DENIED_SELF_2[DENIED<br/>Cannot deactivate self]
+    PA_Deact_Self -- No --> ALLOWED_6[ALLOWED]
+
+    PA_Action -- Reactivate --> PA_React_Target{Target role?}
+    PA_React_Target -- super_admin --> DENIED_RANK_R[DENIED<br/>Cannot reactivate<br/>higher-ranked admin]
+    PA_React_Target -- "platform_admin /<br/>account_manager /<br/>support_agent" --> PA_React_Active{Target is active?}
+    PA_React_Active -- Yes --> DENIED_ACTIVE_2[DENIED<br/>Already active]
+    PA_React_Active -- No --> ALLOWED_7[ALLOWED]
+
+    PA_Action -- Reset password --> DENIED_RESET_PA[DENIED<br/>Only super_admin<br/>can reset passwords]
+
+    %% ── lower roles ──
+    WhatRole -- "account_manager /<br/>support_agent" --> DENIED_ALL[DENIED<br/>No admin management<br/>actions permitted]
+
+    %% Styling
+    style ALLOWED_1 fill:#dcfce7,stroke:#16a34a,color:#166534
+    style ALLOWED_2 fill:#dcfce7,stroke:#16a34a,color:#166534
+    style ALLOWED_3 fill:#dcfce7,stroke:#16a34a,color:#166534
+    style ALLOWED_4 fill:#dcfce7,stroke:#16a34a,color:#166534
+    style ALLOWED_5 fill:#dcfce7,stroke:#16a34a,color:#166534
+    style ALLOWED_6 fill:#dcfce7,stroke:#16a34a,color:#166534
+    style ALLOWED_7 fill:#dcfce7,stroke:#16a34a,color:#166534
+    style DENIED_SELF fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style DENIED_ACTIVE fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style DENIED_SELF_PWD fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style DENIED_RANK_D fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style DENIED_SELF_2 fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style DENIED_RANK_R fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style DENIED_ACTIVE_2 fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style DENIED_RESET_PA fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style DENIED_ALL fill:#fee2e2,stroke:#dc2626,color:#991b1b
