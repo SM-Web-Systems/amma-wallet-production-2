@@ -1,0 +1,43 @@
+# docker-compose.test-db.yml
+# Disposable PostgreSQL container for integration testing (Phase 5.2 — P52-02).
+#
+# This creates an ephemeral test database with:
+# - A restricted (non-superuser) role: stellarwallet_test
+# - A test-only port: 15432 (never 5432)
+# - A known test database name: stellarwallet_test
+# - No persistent volumes — data is destroyed when the container stops
+#
+# Usage:
+#   docker compose -f docker-compose.test-db.yml up -d
+#   npm run test:provision-db    # Writes the trusted marker
+#   npm run test:integration     # Runs integration tests
+#   docker compose -f docker-compose.test-db.yml down   # Destroys data
+#
+# The container uses an init script to:
+# 1. Create the test database
+# 2. Create a restricted (non-superuser) test role
+# 3. Grant necessary privileges
+# 4. The test harness provisioning script then writes the trusted marker
+#
+# DO NOT connect this to production networks or use production secrets.
+
+services:
+  amma-db-integration-test:
+    image: postgres:16-alpine
+    container_name: amma-db-integration-test
+    ports:
+      - "15432:5432"
+    environment:
+      POSTGRES_DB: stellarwallet_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test_superuser_pw_not_for_prod
+    volumes:
+      - ./src/test-integration/init-test-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    # No named volumes — data is ephemeral
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stellarwallet_test -d stellarwallet_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
