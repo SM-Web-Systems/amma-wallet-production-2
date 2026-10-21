@@ -1,0 +1,38 @@
+flowchart LR
+    subgraph Browser["Browser (Client-Side)"]
+        direction TB
+        UI[Admin UI Components]
+        RoleGate["Role gating in UI<br/>(canInvite, canDeactivate,<br/>canReactivate, canResetPassword)"]
+        AdminRoute["AdminRoute guard<br/>checks sessionStorage<br/>for aw_admin_token"]
+        AdminInfo["sessionStorage<br/>aw_admin_info<br/>(id, email, name, role)"]
+
+        UI --> RoleGate
+        RoleGate --> |"Reads role from"| AdminInfo
+        AdminRoute --> |"Reads token from"| SessionToken["sessionStorage<br/>aw_admin_token<br/>(JWT)"]
+    end
+
+    subgraph Note["Trust Boundary"]
+        direction TB
+        Warning["CLIENT-SIDE CHECKS<br/>= UX convenience only.<br/>Can be bypassed by<br/>modifying sessionStorage<br/>or calling API directly."]
+    end
+
+    subgraph Backend["Backend (Authoritative)"]
+        direction TB
+        AuthMW["Auth Middleware<br/>Validates JWT signature,<br/>expiry, admin active status"]
+        RBAC["RBAC Enforcement<br/>Checks caller role vs action<br/>vs target role. Returns 403<br/>if unauthorized."]
+        DB[(Database<br/>admin_accounts table<br/>role + is_active<br/>are source of truth)]
+
+        AuthMW --> RBAC
+        RBAC --> DB
+    end
+
+    UI --> |"adminFetch()<br/>Authorization: Bearer JWT"| AuthMW
+
+    AuthMW --> |"401 if invalid/expired"| UI
+    RBAC --> |"403 if role insufficient"| UI
+    DB --> |"200 + data if authorized"| UI
+
+    style Warning fill:#fef9c3,stroke:#ca8a04,color:#854d0e
+    style Browser fill:#f0f0ff,stroke:#6366f1,color:#312e81
+    style Backend fill:#f0fdf4,stroke:#16a34a,color:#166534
+    style Note fill:#fffbeb,stroke:#d97706,color:#92400e

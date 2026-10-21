@@ -1,0 +1,68 @@
+flowchart LR
+    subgraph "Admin Roles"
+        SA["super_admin"]
+        PA["platform_admin"]
+        AM["account_manager"]
+        SUP["support_agent"]
+    end
+
+    subgraph "View Operations (All Roles)"
+        V1["View tenants<br/>GET /internal/tenants"]
+        V2["View billing<br/>GET /internal/tenants/:id/billing"]
+        V3["View audit logs<br/>GET /internal/tenants/:id/events"]
+        V4["View admins<br/>GET /internal/admins"]
+        V5["View own profile<br/>GET /internal/me"]
+    end
+
+    subgraph "Financial Operations (PRIVILEGED_ROLES)"
+        F1["Post credit<br/>POST /internal/tenants/:id/credit"]
+    end
+
+    subgraph "Tenant Status Operations (PRIVILEGED_ROLES)"
+        S1["Suspend tenant<br/>PATCH /internal/tenants/:id/suspend"]
+        S2["Unsuspend tenant<br/>PATCH /internal/tenants/:id/unsuspend"]
+    end
+
+    subgraph "Admin Management (PRIVILEGED_ROLES)"
+        M1["Invite admin<br/>POST /internal/admins"]
+        M2["Deactivate admin<br/>PATCH /internal/admins/:id/deactivate"]
+        M3["Reactivate admin<br/>PATCH /internal/admins/:id/reactivate"]
+    end
+
+    subgraph "Super Admin Only"
+        X1["Reset password<br/>POST /internal/admins/:id/reset-password"]
+    end
+
+    %% All roles can view
+    SA --> V1 & V2 & V3 & V4 & V5
+    PA --> V1 & V2 & V3 & V4 & V5
+    AM --> V1 & V2 & V3 & V4 & V5
+    SUP --> V1 & V2 & V3 & V4 & V5
+
+    %% Privileged roles: financial + status + admin mgmt
+    SA --> F1 & S1 & S2
+    PA --> F1 & S1 & S2
+    SA --> M1 & M2 & M3
+    PA --> M1 & M2 & M3
+
+    %% Super admin only
+    SA --> X1
+
+    %% Blocked paths
+    AM -.->|"403 Forbidden"| F1
+    AM -.->|"403 Forbidden"| S1
+    AM -.->|"403 Forbidden"| M1
+    SUP -.->|"403 Forbidden"| F1
+    SUP -.->|"403 Forbidden"| S1
+    SUP -.->|"403 Forbidden"| M1
+    PA -.->|"Cannot target super_admin"| M2
+    PA -.->|"Cannot target super_admin"| X1
+
+    style SA fill:#7c3aed,color:#fff
+    style PA fill:#2563eb,color:#fff
+    style AM fill:#059669,color:#fff
+    style SUP fill:#d97706,color:#fff
+    style X1 fill:#dc2626,color:#fff
+    style F1 fill:#bae6fd,stroke:#0284c7
+    style S1 fill:#fef3c7,stroke:#d97706
+    style S2 fill:#fef3c7,stroke:#d97706
