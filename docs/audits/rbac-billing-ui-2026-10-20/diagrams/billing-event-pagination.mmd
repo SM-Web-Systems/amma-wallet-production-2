@@ -1,0 +1,57 @@
+sequenceDiagram
+    autonumber
+    actor Admin as Admin User
+    participant Page as AdminTenantDetail
+    participant API_Billing as GET /internal/tenants/:id/billing
+    participant API_Events as GET /internal/tenants/:id/events
+    participant State as Component State
+
+    Note over Admin,State: === Initial page load ===
+
+    Admin->>Page: Navigate to /admin/tenants/:id
+    Page->>Page: Set loading = true
+    Page->>API_Billing: GET /api/v1/internal/tenants/:id/billing
+
+    API_Billing-->>Page: Response with billing summary
+    Note over API_Billing,Page: { tenantId, balance, isActive, ...<br/>recentEvents: [...],<br/>eventsHasMore: true/false,<br/>eventsNextCursor: 42 | null }
+
+    Page->>State: setAllEvents(recentEvents)
+    Page->>State: setEventsHasMore(eventsHasMore)
+    Page->>State: setEventsNextCursor(eventsNextCursor)
+    Page-->>Admin: Render billing summary + event list
+
+    Note over Admin,State: === Load older events (cursor pagination) ===
+
+    alt eventsHasMore is true
+        Admin->>Page: Click "Load older" button
+
+        Page->>Page: Set loadingOlder = true
+        Page->>API_Events: GET /api/v1/internal/tenants/:id/events?beforeId=42
+
+        alt 401 Unauthorized
+            API_Events-->>Page: 401
+            Page->>State: logout() - clear session, redirect
+        else Error response
+            API_Events-->>Page: { error: "..." }
+            Page-->>Admin: Show older-events error message
+        else Success
+            API_Events-->>Page: { events: [...], hasMore: true/false, nextCursor: 17 | null }
+
+            Page->>State: Append events to allEvents
+            Page->>State: setEventsHasMore(hasMore)
+            Page->>State: setEventsNextCursor(nextCursor)
+            Page-->>Admin: Render appended events in list
+        end
+
+        Note over Admin,Page: Admin can repeat "Load older"<br/>until eventsHasMore = false,<br/>each time passing the latest cursor.
+    else eventsHasMore is false
+        Note over Page: "Load older" button hidden.<br/>All events are loaded.
+    end
+
+    Note over Admin,State: === Full refresh resets pagination ===
+
+    Admin->>Page: Click "Refresh" button
+    Page->>API_Billing: GET /api/v1/internal/tenants/:id/billing
+    API_Billing-->>Page: Fresh billing data
+    Page->>State: Reset allEvents, eventsHasMore,<br/>eventsNextCursor from response
+    Page-->>Admin: Render fresh event list from beginning

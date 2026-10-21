@@ -1,0 +1,66 @@
+stateDiagram-v2
+    [*] --> Active: Tenant created
+
+    Active --> SoftSuspended_DebtLimit: auto-suspension\nbalance ≤ debt_limit
+    Active --> SoftSuspended_GraceExpired: auto-suspension\ngrace period expired
+    Active --> SoftSuspended_Manual: Admin PATCH /suspend type=soft
+    Active --> HardSuspended: Admin PATCH /suspend type=hard
+
+    SoftSuspended_DebtLimit --> Active: auto-recovery\nbalance > debt_limit/2
+    SoftSuspended_GraceExpired --> Active: auto-recovery\nbalance > 0
+    SoftSuspended_Manual --> Active: Admin PATCH /unsuspend\n(only manual clears)
+    HardSuspended --> Active: Admin PATCH /unsuspend
+
+    state SoftSuspended_DebtLimit {
+        note right of SoftSuspended_DebtLimit
+            is_active = true
+            suspended_at = now
+            suspension_reason = "debt_limit"
+
+            BLOCKS: wallet activation, onboarding
+            ALLOWS: SSO, reads
+            ALLOWS: monthly maintenance (accrues debt)
+        end note
+    }
+
+    state SoftSuspended_GraceExpired {
+        note right of SoftSuspended_GraceExpired
+            is_active = true
+            suspended_at = now
+            suspension_reason = "maintenance_grace_expired"
+
+            BLOCKS: wallet activation, onboarding
+            ALLOWS: SSO, reads
+        end note
+    }
+
+    state SoftSuspended_Manual {
+        note right of SoftSuspended_Manual
+            is_active = true
+            suspended_at = now
+            suspension_reason = "manual"
+
+            BLOCKS: wallet activation, onboarding
+            ALLOWS: SSO, reads
+            NEVER auto-cleared
+        end note
+    }
+
+    state HardSuspended {
+        note right of HardSuspended
+            is_active = false
+            suspended_at = now
+            suspension_reason = "manual"
+
+            BLOCKS: everything except SSO reads
+            NEVER auto-cleared
+        end note
+    }
+
+    state Active {
+        note right of Active
+            is_active = true
+            suspended_at = null
+            suspension_reason = null
+        end note
+    }
