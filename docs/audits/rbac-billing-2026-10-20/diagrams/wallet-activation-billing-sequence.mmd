@@ -1,0 +1,70 @@
+sequenceDiagram
+    participant LMS as LMS (Tenant Client)
+    participant API as AmmaWallet API
+    participant BilSvc as billing.service.ts
+    participant DB as PostgreSQL (Neon)
+    participant Stellar as Stellar Network
+
+    LMS->>API: POST /api/v1/wallets<br/>x-api-key: amma_XXXX
+
+    Note over API: requireTenantApiKey middleware
+    API->>DB: SELECT tenant_api_keys<br/>WHERE key_hash = SHA256(key)
+    DB-->>API: {tenantId, scopes, rateLimit}
+
+    Note over API: Rate limit check (in-memory)
+
+    API->>BilSvc: checkWalletBilling(tenantId, userId)
+    BilSvc->>DB: getBillingPolicy(tenantId)
+    DB-->>BilSvc: BillingPolicy
+    BilSvc->>DB: getTenantBillingState(tenantId)
+    DB-->>BilSvc: {balance, isActive, suspendedAt}
+
+    alt Tenant suspended or inactive
+        BilSvc-->>API: {ok: false, httpStatus: 402/403}
+        API-->>LMS: 402/403 Error
+    end
+
+    BilSvc->>DB: countUserWallets(userId)
+    DB-->>BilSvc: walletCount
+
+    alt walletCount == 0 (new activation)
+        Note over BilSvc: amount = walletFunding + platformFee<br/>(3 XLM default)
+        alt Acquisition mode & balance > debtLimit
+            BilSvc-->>API: {ok: true, eventType: new_wallet_activation, amount: -3.0}
+        else balance <= debtLimit
+            BilSvc-->>API: {ok: false, httpStatus: 402}
+            API-->>LMS: 402 Debt limit reached
+        end
+    else walletCount > 0 (onboarding)
+        Note over BilSvc: amount = onboardingFee (1 XLM default)
+        alt balance > 0
+            BilSvc-->>API: {ok: true, eventType: existing_user_onboarding, amount: -1.0}
+        else balance <= 0
+            BilSvc-->>API: {ok: false, httpStatus: 402}
+            API-->>LMS: 402 Insufficient balance
+        end
+    end
+
+    Note over API: BEGIN TRANSACTION
+    API->>DB: SELECT tenants FOR UPDATE<br/>(TOCTOU guard)
+    API->>BilSvc: checkWalletBillingTx(tx, tenantId, userId)
+    Note over BilSvc: Re-validate with lock held
+
+    API->>BilSvc: writeBillingDebit(tx, ...)
+    BilSvc->>DB: INSERT billing_events
+    BilSvc->>DB: UPDATE tenants SET balance = balance + amount
+    DB-->>BilSvc: {billingEventId, newBalance}
+
+    API->>Stellar: Create + fund wallet
+    Stellar-->>API: txHash
+
+    API->>DB: INSERT funding_events
+    API->>BilSvc: upsertTenantUser(tx, tenantId, userId)
+    BilSvc->>DB: INSERT tenant_users ON CONFLICT DO NOTHING
+
+    Note over API: COMMIT TRANSACTION
+
+    API-->>LMS: 200 {publicKey, funded: true}
+
+    Note over BilSvc: After commit (fire-and-forget)
+    BilSvc->>DB: maybeNotifyDeficit() if balance < 0

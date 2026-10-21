@@ -1,0 +1,26 @@
+stateDiagram-v2
+    [*] --> Invited : super_admin or platform_admin<br/>POST /internal/admins<br/>(email, name, role, password)
+
+    Invited --> Active : Account created with<br/>is_active = true
+
+    Active --> Deactivated : super_admin can deactivate any admin<br/>platform_admin can deactivate non-super admins<br/>PATCH /internal/admins/:id/deactivate<br/>(cannot deactivate self)
+
+    Deactivated --> Active : super_admin can reactivate any admin<br/>platform_admin can reactivate non-super admins<br/>PATCH /internal/admins/:id/reactivate
+
+    state Active {
+        [*] --> Normal
+        Normal --> PasswordReset : super_admin only<br/>POST /internal/admins/:id/reset-password<br/>(cannot reset own password)
+        PasswordReset --> Normal : Admin signs in with<br/>new password
+    }
+
+    note right of Deactivated
+        JWT rejected on next request.
+        Admin cannot sign in.
+        Reversible by reactivation.
+    end note
+
+    note right of Active
+        Admin can sign in and
+        perform actions permitted
+        by their role.
+    end note
