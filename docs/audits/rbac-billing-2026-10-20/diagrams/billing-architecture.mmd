@@ -1,0 +1,71 @@
+flowchart TD
+    subgraph "Entry Points"
+        WR["POST /api/v1/wallets<br/>(Tenant API Key)"]
+        AC["POST .../credit<br/>(Admin - PRIVILEGED_ROLES)"]
+        MJ["Hourly Cron Job<br/>(monthly-maintenance.ts)"]
+        ASJ["Hourly Cron Job<br/>(auto-suspension.ts)"]
+    end
+
+    subgraph "Pre-flight Checks"
+        PF["checkWalletBilling()<br/>Read-only validation"]
+        PFT["checkWalletBillingTx()<br/>FOR UPDATE lock"]
+    end
+
+    subgraph "Billing Service"
+        WBD["writeBillingDebit()<br/>Insert billing_events<br/>Decrement balance"]
+        WBC["writeBillingCredit()<br/>Insert billing_events<br/>Increment balance"]
+        RMMT["runMonthlyMaintenanceForTenant()<br/>Idempotent via UNIQUE constraint"]
+        UPT["upsertTenantUser()<br/>ON CONFLICT DO NOTHING"]
+    end
+
+    subgraph "Auto-Suspension"
+        EDL["enforceDebtLimit()<br/>balance ≤ debt_limit → suspend"]
+        EMG["enforceMaintGrace()<br/>grace expired → suspend"]
+        RMG["recoverMaintenanceGrace()<br/>balance > 0 → unsuspend"]
+        RDL["recoverDebtLimit()<br/>balance > limit/2 → unsuspend"]
+    end
+
+    subgraph "Database (Atomic)"
+        TE["tenants.prepaid_xlm_balance<br/>(SQL: balance + amount::numeric)"]
+        BE["billing_events<br/>(Append-only ledger)"]
+        MMS["monthly_maintenance_snapshots<br/>(UNIQUE tenant_id, billing_period)"]
+        BP["tenant_bundle_purchases"]
+    end
+
+    subgraph "Notifications"
+        DEF["maybeNotifyDeficit()<br/>Cooldown-gated email"]
+        SUS["notifyAutoSuspension()<br/>Email to tenant + admins"]
+        REC["notifyAutoUnsuspend()<br/>Email to tenant"]
+    end
+
+    WR --> PF
+    PF -->|ok: true| PFT
+    PFT -->|ok: true| WBD
+    WBD --> TE
+    WBD --> BE
+    WBD -.->|After commit| DEF
+
+    AC --> WBC
+    WBC --> TE
+    WBC --> BE
+    WBC -->|bundle_purchase| BP
+
+    MJ --> RMMT
+    RMMT --> WBD
+    RMMT --> MMS
+    RMMT -.->|After commit| DEF
+
+    ASJ --> EDL
+    ASJ --> EMG
+    ASJ --> RMG
+    ASJ --> RDL
+    EDL -.-> SUS
+    EMG -.-> SUS
+    RMG -.-> REC
+    RDL -.-> REC
+
+    style WBD fill:#c6f,color:#fff
+    style WBC fill:#6cf,color:#fff
+    style TE fill:#fc6
+    style BE fill:#fc6
+    style MMS fill:#fc6
