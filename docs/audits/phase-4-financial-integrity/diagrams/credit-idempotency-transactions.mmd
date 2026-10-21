@@ -1,0 +1,63 @@
+sequenceDiagram
+    participant Client as Admin UI
+    participant API as POST /internal/tenants/:id/credit
+    participant TX as DB Transaction
+    participant BE as billing_events
+    participant T as tenants
+    participant UQ as UNIQUE INDEX<br/>uq_billing_credit_idempotency
+
+    rect rgb(200,255,200)
+    Note over Client,UQ: New Credit Request (happy path)
+    Client->>Client: idempotency_key = crypto.randomUUID()
+    Client->>API: POST { type, amount_xlm, idempotency_key: K }
+    API->>API: Auth + RBAC role check (PRIVILEGED_ROLES)
+    API->>TX: BEGIN (READ COMMITTED)
+    TX->>BE: SELECT * FROM billing_events<br/>WHERE tenant_id = X AND idempotency_key = K
+    BE-->>TX: [] (no match)
+    TX->>BE: INSERT INTO billing_events<br/>(tenant_id, event_type, amount_xlm, idempotency_key)
+    UQ-->>TX: UNIQUE constraint satisfied
+    TX->>T: UPDATE tenants<br/>SET prepaid_xlm_balance = prepaid_xlm_balance + amount<br/>WHERE id = X
+    TX-->>TX: COMMIT
+    API-->>Client: 200 { newBalance, amountCredited }
+    end
+
+    rect rgb(255,255,200)
+    Note over Client,UQ: Duplicate Request — same key, same params (safe retry)
+    Client->>API: POST { type, amount_xlm, idempotency_key: K }
+    API->>TX: BEGIN (READ COMMITTED)
+    TX->>BE: SELECT * FROM billing_events<br/>WHERE tenant_id = X AND idempotency_key = K
+    BE-->>TX: [{ id:42, event_type, amount_xlm }]
+    TX->>TX: Compare: eventType matches, amountXlm matches
+    TX->>T: SELECT prepaid_xlm_balance FROM tenants WHERE id = X
+    T-->>TX: { balance }
+    TX-->>TX: COMMIT (no writes performed)
+    API-->>Client: 200 { newBalance, amountCredited, duplicate: true }
+    end
+
+    rect rgb(255,200,200)
+    Note over Client,UQ: Conflict — same key, different params
+    Client->>API: POST { type, different_amount, idempotency_key: K }
+    API->>TX: BEGIN (READ COMMITTED)
+    TX->>BE: SELECT * FROM billing_events<br/>WHERE tenant_id = X AND idempotency_key = K
+    BE-->>TX: [{ id:42, event_type, amount_xlm }]
+    TX->>TX: Compare: amountXlm MISMATCH
+    TX-->>TX: ROLLBACK
+    API-->>Client: 409 Conflict { error: "Idempotency key reused with different parameters" }
+    end
+
+    rect rgb(230,200,255)
+    Note over Client,UQ: Concurrent Race — two requests with same key arrive simultaneously
+    Client->>API: Request A (key=K)
+    Client->>API: Request B (key=K)
+    API->>TX: A: BEGIN → SELECT → [] (empty) → INSERT
+    UQ-->>TX: A: UNIQUE constraint satisfied
+    API->>TX: B: BEGIN → SELECT → [] (empty) → INSERT
+    UQ-->>TX: B: UNIQUE VIOLATION (23505)
+    TX-->>TX: A: UPDATE balance → COMMIT
+    TX-->>TX: B: ROLLBACK (cannot continue failed tx)
+    Note over TX,BE: B opens new read-only transaction
+    TX->>BE: B: new BEGIN → SELECT → [{ original event }]
+    TX-->>TX: B: COMMIT (read-only)
+    API-->>Client: A: 200 { amountCredited }
+    API-->>Client: B: 200 { duplicate: true }
+    end

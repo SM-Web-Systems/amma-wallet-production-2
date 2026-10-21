@@ -1,0 +1,72 @@
+sequenceDiagram
+    autonumber
+    actor Admin as Admin User
+    participant Page as AdminTenantDetail
+    participant Modal as Confirmation Modal
+    participant API as PATCH /internal/tenants/:id/...
+    participant State as Page State
+
+    Note over Admin,State: === SUSPEND FLOW ===
+
+    Admin->>Page: Click "Suspend" button
+    Page->>Modal: Open modal with default type = hard
+
+    Admin->>Modal: Select suspend type via radio buttons
+    Note over Modal: Hard suspend: deactivates account,<br/>blocks wallets + transfers + API.<br/>Soft suspend: blocks new activations<br/>only, existing wallets stay live.
+
+    alt Admin cancels
+        Admin->>Modal: Click "Cancel" or press Escape
+        Modal->>Page: Close modal, no action
+    else Admin confirms
+        Admin->>Modal: Click "Hard suspend tenant" or "Soft suspend tenant"
+        Modal->>Page: Close modal, trigger submitStatusAction("suspend")
+
+        Page->>Page: Set suspendBusy = true
+        Page->>API: PATCH /api/v1/internal/tenants/:id/suspend<br/>{ type: "hard" | "soft" }
+
+        alt 401 Unauthorized
+            API-->>Page: 401
+            Page->>State: logout() - clear session, redirect
+        else Error response
+            API-->>Page: { error: "..." }
+            Page-->>Admin: Show suspend error message
+        else Success
+            API-->>Page: 200 OK
+            Page->>State: Trigger load() to refresh
+            State->>API: GET /internal/tenants/:id/billing
+            API-->>State: Updated tenant data
+            State-->>Admin: Render updated status (Suspended / Soft-suspended)
+        end
+    end
+
+    Note over Admin,State: === UNSUSPEND FLOW ===
+
+    Admin->>Page: Click "Unsuspend" button
+    Page->>Modal: Open modal (action = unsuspend)
+
+    Note over Modal: Shows: "Full wallet and API access<br/>will be restored immediately."
+
+    alt Admin cancels
+        Admin->>Modal: Click "Cancel" or press Escape
+        Modal->>Page: Close modal, no action
+    else Admin confirms
+        Admin->>Modal: Click "Unsuspend tenant"
+        Modal->>Page: Close modal, trigger submitStatusAction("unsuspend")
+
+        Page->>Page: Set suspendBusy = true
+        Page->>API: PATCH /api/v1/internal/tenants/:id/unsuspend
+
+        alt 401 Unauthorized
+            API-->>Page: 401
+            Page->>State: logout() - clear session, redirect
+        else Error response
+            API-->>Page: { error: "..." }
+            Page-->>Admin: Show unsuspend error message
+        else Success
+            API-->>Page: 200 OK
+            Page->>State: Trigger load() to refresh
+            State->>API: GET /internal/tenants/:id/billing
+            API-->>State: Updated tenant data
+            State-->>Admin: Render updated status (Active)
+        end
+    end

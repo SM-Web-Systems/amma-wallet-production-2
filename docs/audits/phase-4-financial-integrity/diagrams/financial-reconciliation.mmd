@@ -1,0 +1,60 @@
+flowchart TD
+    subgraph "Append-Only Ledger"
+        direction TB
+        BE["billing_events<br/>(append-only — no UPDATE or DELETE)"]
+        EV1["event: wallet_activation<br/>amount_xlm: -1.50"]
+        EV2["event: monthly_maintenance<br/>amount_xlm: -0.50"]
+        EV3["event: manual_topup<br/>amount_xlm: +100.00"]
+        EV4["event: bundle_purchase<br/>amount_xlm: +500.00"]
+        BE --> EV1 & EV2 & EV3 & EV4
+    end
+
+    subgraph "Database Constraints"
+        direction TB
+        CHK1["CHECK chk_billing_amount_nonzero<br/>amount_xlm != 0<br/>(prevents zero-value events)"]
+        CHK2["CHECK chk_billing_event_type<br/>event_type IN (<br/>  'wallet_activation',<br/>  'monthly_maintenance',<br/>  'manual_topup',<br/>  'bundle_purchase',<br/>  'adjustment'<br/>)<br/>(prevents invalid event types)"]
+        UQ["UNIQUE INDEX<br/>uq_billing_credit_idempotency<br/>(tenant_id, idempotency_key)<br/>WHERE idempotency_key IS NOT NULL<br/>(prevents duplicate credits)"]
+    end
+
+    subgraph "Deduplication Mechanism"
+        direction TB
+        IK["idempotency_key (UUID v4)<br/>Generated once per user action<br/>Stored on billing_events row"]
+        DUP["Duplicate detection:<br/>1. Application-level SELECT before INSERT<br/>2. DB-level UNIQUE constraint (concurrent safety)<br/>3. Failed tx → new read-only tx → return duplicate"]
+        IK --> DUP
+    end
+
+    subgraph "Reconciliation Invariant"
+        direction TB
+        SUM["SUM(amount_xlm)<br/>FROM billing_events<br/>WHERE tenant_id = X"]
+        BAL["tenants.prepaid_xlm_balance<br/>Current balance for tenant X"]
+        INIT["tenants.initial_balance<br/>(starting balance at creation, typically 0)"]
+        INV["INVARIANT:<br/>initial_balance + SUM(amount_xlm) = prepaid_xlm_balance<br/><br/>If this equality fails, the ledger<br/>and balance are out of sync —<br/>indicates a bug or manual DB edit."]
+    end
+
+    subgraph "Verification Queries"
+        direction TB
+        Q1["Reconciliation check:<br/>SELECT t.id,<br/>  t.prepaid_xlm_balance,<br/>  COALESCE(SUM(be.amount_xlm), 0) AS ledger_sum<br/>FROM tenants t<br/>LEFT JOIN billing_events be ON be.tenant_id = t.id<br/>GROUP BY t.id<br/>HAVING t.prepaid_xlm_balance !=<br/>  COALESCE(SUM(be.amount_xlm), 0)"]
+        Q2["Duplicate detection audit:<br/>SELECT idempotency_key, COUNT(*)<br/>FROM billing_events<br/>WHERE idempotency_key IS NOT NULL<br/>GROUP BY tenant_id, idempotency_key<br/>HAVING COUNT(*) > 1"]
+    end
+
+    BE --> CHK1
+    BE --> CHK2
+    BE --> UQ
+
+    EV3 & EV4 --> IK
+
+    SUM --> INV
+    BAL --> INV
+    INIT --> INV
+
+    INV --> Q1
+    UQ --> Q2
+
+    style BE fill:#fc6,stroke:#c90
+    style BAL fill:#fc6,stroke:#c90
+    style INV fill:#dcfce7,stroke:#16a34a,color:#166534
+    style CHK1 fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style CHK2 fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    style UQ fill:#ddd6fe,stroke:#7c3aed,color:#3b0764
+    style Q1 fill:#f0f0f0,stroke:#999
+    style Q2 fill:#f0f0f0,stroke:#999
