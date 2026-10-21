@@ -1,0 +1,55 @@
+flowchart TD
+    subgraph "Pre-Transaction (outside tx boundary)"
+        direction TB
+        A1["Tenant existence check<br/>SELECT FROM tenants WHERE id = :id<br/>(read-only, no lock)"]
+        A2["Bundle lookup<br/>SELECT FROM billing_bundles<br/>WHERE id = :bundleId<br/>(read-only, no lock)"]
+        A3["Auth + RBAC validation<br/>JWT verify, role check<br/>(in-memory, no DB)"]
+    end
+
+    subgraph TX["TRANSACTION BOUNDARY (BEGIN ... COMMIT/ROLLBACK)"]
+        direction TB
+        subgraph "writeBillingCredit — atomic block"
+            direction TB
+            B1["1. Idempotency SELECT<br/>SELECT * FROM billing_events<br/>WHERE tenant_id = :id<br/>AND idempotency_key = :key"]
+            B2{Key found?}
+            B3["2a. INSERT billing_events<br/>(tenant_id, event_type, amount_xlm,<br/>idempotency_key, notes, payment_reference)"]
+            B4["3. UPDATE tenants<br/>SET prepaid_xlm_balance =<br/>prepaid_xlm_balance + amount::numeric<br/>WHERE id = :id"]
+            B5["4. Optional: INSERT tenant_bundle_purchases<br/>(if type = bundle_purchase)"]
+            B6["5. Optional: UPDATE billing_events<br/>SET bundle_purchase_id = :bpId<br/>(back-reference for bundle events)"]
+            B7["COMMIT"]
+            B8["Compare params<br/>(eventType, amountXlm)"]
+            B9["Params match:<br/>Read balance, COMMIT<br/>Return duplicate: true"]
+            B10["Params differ:<br/>ROLLBACK<br/>Return 409 Conflict"]
+        end
+    end
+
+    subgraph "Post-Transaction (outside tx boundary)"
+        direction TB
+        C1["auditLog()<br/>INSERT INTO audit_logs<br/>(fire-and-forget, separate connection)<br/>Skipped for duplicate requests"]
+        C2["HTTP response<br/>200 { newBalance, amountCredited }<br/>or 200 { duplicate: true }<br/>or 409 { error }"]
+    end
+
+    A3 --> A1
+    A1 -->|"Tenant found"| A2
+    A2 --> B1
+    B1 --> B2
+    B2 -->|"Not found"| B3
+    B3 --> B4
+    B4 --> B5
+    B5 --> B6
+    B6 --> B7
+    B2 -->|"Found"| B8
+    B8 -->|"Match"| B9
+    B8 -->|"Mismatch"| B10
+    B7 --> C1
+    B9 --> C2
+    B10 --> C2
+    C1 --> C2
+
+    style TX fill:#f0fdf4,stroke:#16a34a,stroke-width:3px,color:#166534
+    style B3 fill:#bae6fd,stroke:#0284c7
+    style B4 fill:#bae6fd,stroke:#0284c7
+    style B5 fill:#e8d5f5,stroke:#7c3aed
+    style B6 fill:#e8d5f5,stroke:#7c3aed
+    style B10 fill:#fee2e2,stroke:#dc2626
+    style C1 fill:#fef3c7,stroke:#d97706
